@@ -6,9 +6,7 @@ step_ca_host_secrets_dir: /home/devops/containerd/volume/app-data/step-ca/secret
 
 step_ca_container_name: step-ca
 
-# TODO: set this to the actual JWK provisioner name configured on step-ca -
-# find it with: docker exec -it step-ca step ca provisioners list
-step_ca_provisioner: CHANGE_ME
+step_ca_provisioner: afshin.parhizkari@gmail.com
 
 # The password itself must NOT go here - it's read from the
 # STEP_CA_PROVISIONER_PASSWORD environment variable at runtime (see
