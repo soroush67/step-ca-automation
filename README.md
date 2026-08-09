@@ -47,10 +47,11 @@ render a site config from it, enable the site, and reload nginx.
    # edit step_ca_provisioner_password in it, then:
    ansible-vault encrypt inventory/sample/group_vars/step_ca/vault.yml
    ```
-3. Confirm `ansible_user` (`devops` by default) has passwordless sudo on
-   both hosts, and that `docker exec` on `.11.4` doesn't require sudo for
-   that user (adjust `become` in `playbooks/issue_certificate.yml` if it
-   does).
+3. The `step_ca` play runs without `become` (relies on `devops` already
+   being in the `docker` group and owning `step_ca_host_certs_dir`/
+   `step_ca_host_secrets_dir`). The `nginx_gateway` play still uses
+   `become: true` for `/etc/nginx` and the service reload - confirm
+   `devops` has passwordless sudo there.
 
 ## Usage
 
@@ -82,12 +83,15 @@ One-time setup, before the first run:
    `inventory/sample/group_vars/step_ca/vault.yml`) - or change
    `VAULT_CREDENTIALS_ID` in the pipeline to whatever ID you use.
 3. Confirm `ansible-playbook` is on `PATH` for the OS user the Jenkins
-   agent runs as on `.11.4`, and that that user can SSH to `192.168.11.2`
-   as `devops` (already true per your setup) **and to itself** - the
-   `step_ca` play targets `192.168.11.4`, and the pipeline now runs *on*
-   `192.168.11.4`, so self-SSH needs to work too (or add
-   `ansible_connection: local` for that host in the inventory if it
-   doesn't).
+   agent runs as on `.11.4`. That user (via its SSH key) needs to be able
+   to `ssh devops@192.168.11.4` (itself - confirmed working) and
+   `ssh devops@192.168.11.2`.
+
+Note: even though the pipeline's agent process runs directly on
+`192.168.11.4`, the `step_ca` play still connects over SSH as `devops`
+rather than executing locally as the Jenkins agent's own OS user - the
+agent user isn't in the `docker` group and has no passwordless sudo,
+whereas `devops` already has exactly the access the manual workflow used.
 
 The pipeline never prints the vault password: it's bound via
 `withCredentials` (Jenkins auto-masks it in the log), written to a
@@ -111,6 +115,7 @@ end-to-end. Before trusting it against a real domain:
 - Run once against a throwaway/test domain first and inspect
   `/etc/nginx/sites-available/<domain>.conf` and the reload result before
   relying on it for production domains.
-- `infra-Domain.groovy` hasn't run against a real Jenkins instance either
-  (no Jenkins reachable from where it was written) - the node label and
-  self-SSH points above are the most likely first failures.
+- `infra-Domain.groovy` has run against a real Jenkins instance and gotten
+  past checkout, credentials, and the step-ca connection; the `devops`
+  passwordless-sudo assumption for the `nginx_gateway` play is still
+  unverified end-to-end.

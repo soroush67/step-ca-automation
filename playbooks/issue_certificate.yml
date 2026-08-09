@@ -8,7 +8,10 @@
 
 - name: Issue certificate on step-ca
   hosts: step_ca
-  become: true
+  # No become here: this connects via SSH as devops (ansible_user), which
+  # already runs docker exec without sudo (docker group membership) and
+  # owns step_ca_host_certs_dir/secrets_dir directly - no root needed.
+  become: false
   roles:
     - step_ca_issue
 
