@@ -62,6 +62,41 @@ ansible-playbook playbooks/issue_certificate.yml \
   --ask-vault-pass
 ```
 
+## CI/CD (Jenkins)
+
+`infra-Domain.groovy` is a Declarative Pipeline that wraps `ansible-playbook
+playbooks/issue_certificate.yml` behind an interactive "Build with
+Parameters" form (`DOMAIN`, `BACKEND_IP`, `BACKEND_PORT`,
+`FORCE_REISSUE`), so it can be run without CLI access.
+
+Set up as a Jenkins Pipeline job: "Pipeline script from SCM", pointing at
+this repo, with **Script Path** = `infra-Domain.groovy`.
+
+One-time setup, before the first run:
+
+1. In `infra-Domain.groovy`, set `AGENT_NODE_LABEL` to the actual label of
+   the SSH agent node registered for `192.168.11.4`.
+2. Create a Jenkins **Secret text** credential holding the step-ca
+   provisioner's vault password, with ID `step-ca-vault-password` (must
+   match what's encrypted in
+   `inventory/sample/group_vars/step_ca/vault.yml`) - or change
+   `VAULT_CREDENTIALS_ID` in the pipeline to whatever ID you use.
+3. Confirm `ansible-playbook` is on `PATH` for the OS user the Jenkins
+   agent runs as on `.11.4`, and that that user can SSH to `192.168.11.2`
+   as `devops` (already true per your setup) **and to itself** - the
+   `step_ca` play targets `192.168.11.4`, and the pipeline now runs *on*
+   `192.168.11.4`, so self-SSH needs to work too (or add
+   `ansible_connection: local` for that host in the inventory if it
+   doesn't).
+
+The pipeline never prints the vault password: it's bound via
+`withCredentials` (Jenkins auto-masks it in the log), written to a
+`vault_pass.txt` temp file in the workspace right before use, and removed
+in a `finally`/`post always` block. Build parameters are validated
+(FQDN/IPv4/port format) and passed to the shell via environment variables
+rather than Groovy string interpolation, to rule out shell injection from
+the input form.
+
 ## Not yet verified
 
 This was scaffolded without SSH access to `192.168.11.4` / `.11.2` from the
@@ -76,3 +111,6 @@ end-to-end. Before trusting it against a real domain:
 - Run once against a throwaway/test domain first and inspect
   `/etc/nginx/sites-available/<domain>.conf` and the reload result before
   relying on it for production domains.
+- `infra-Domain.groovy` hasn't run against a real Jenkins instance either
+  (no Jenkins reachable from where it was written) - the node label and
+  self-SSH points above are the most likely first failures.
