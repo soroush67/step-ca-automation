@@ -1,0 +1,70 @@
+---
+- name: Ensure required variables are provided
+  ansible.builtin.assert:
+    that:
+      - domain is defined
+      - domain | length > 0
+      - backend_ip is defined
+      - backend_port is defined
+    fail_msg: >-
+      "domain", "backend_ip" and "backend_port" must be set, e.g.:
+      ansible-playbook playbooks/issue_certificate.yml -e domain=elk.hamainsurance.net
+      -e backend_ip=10.0.0.5 -e backend_port=5601 --ask-vault-pass
+    quiet: true
+
+- name: Ensure TLS certificate/key directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ nginx_ssl_certs_dir }}"
+    - "{{ nginx_ssl_secrets_dir }}"
+
+- name: Read issued certificate from the step-ca host
+  ansible.builtin.slurp:
+    src: "{{ hostvars[groups['step_ca'][0]].step_ca_host_certs_dir }}/{{ domain }}.crt"
+  delegate_to: "{{ groups['step_ca'][0] }}"
+  register: issued_cert
+
+- name: Read issued private key from the step-ca host
+  ansible.builtin.slurp:
+    src: "{{ hostvars[groups['step_ca'][0]].step_ca_host_secrets_dir }}/{{ domain }}.key"
+  delegate_to: "{{ groups['step_ca'][0] }}"
+  register: issued_key
+  no_log: true
+
+- name: Deploy certificate to nginx host
+  ansible.builtin.copy:
+    content: "{{ issued_cert.content | b64decode }}"
+    dest: "{{ nginx_ssl_certs_dir }}/{{ domain }}.crt"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy private key to nginx host
+  ansible.builtin.copy:
+    content: "{{ issued_key.content | b64decode }}"
+    dest: "{{ nginx_ssl_secrets_dir }}/{{ domain }}.key"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Render nginx site config for {{ domain }}
+  ansible.builtin.template:
+    src: site.conf.j2
+    dest: "{{ nginx_sites_available_dir }}/{{ domain }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload nginx
+
+- name: Enable site (symlink into sites-enabled)
+  ansible.builtin.file:
+    src: "{{ nginx_sites_available_dir }}/{{ domain }}.conf"
+    dest: "{{ nginx_sites_enabled_dir }}/{{ domain }}.conf"
+    state: link
+  notify: reload nginx

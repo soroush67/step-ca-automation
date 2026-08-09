@@ -1,0 +1,13 @@
+---
+# Kept here (not just as role defaults) so nginx_tls_site can read them via
+# hostvars[groups['step_ca'][0]] regardless of play/role ordering.
+step_ca_host_certs_dir: /home/devops/containerd/volume/app-data/step-ca/certs
+step_ca_host_secrets_dir: /home/devops/containerd/volume/app-data/step-ca/secrets
+
+step_ca_container_name: step-ca
+
+# TODO: set this to the actual JWK provisioner name configured on step-ca.
+step_ca_provisioner: CHANGE_ME
+
+# The password itself must NOT go here in plaintext - see
+# group_vars/step_ca_vault.yml.example

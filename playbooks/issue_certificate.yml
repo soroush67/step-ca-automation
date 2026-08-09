@@ -1,0 +1,19 @@
+---
+# Issues (or re-uses) a TLS certificate for `domain` from step-ca on the
+# step_ca host, then deploys it to the nginx_gateway host and enables the
+# site. One domain per run - see README.md for usage.
+#
+# Required extra-vars: domain, backend_ip, backend_port
+# Requires: --ask-vault-pass (or --vault-password-file) for step_ca_provisioner_password
+
+- name: Issue certificate on step-ca
+  hosts: step_ca
+  become: true
+  roles:
+    - step_ca_issue
+
+- name: Deploy certificate and configure nginx site
+  hosts: nginx_gateway
+  become: true
+  roles:
+    - nginx_tls_site

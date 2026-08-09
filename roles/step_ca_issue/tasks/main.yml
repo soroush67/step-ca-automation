@@ -1,0 +1,43 @@
+---
+- name: Ensure required variables are provided
+  ansible.builtin.assert:
+    that:
+      - domain is defined
+      - domain | length > 0
+      - step_ca_provisioner is not none
+      - step_ca_provisioner_password is defined
+    fail_msg: >-
+      "domain" and "step_ca_provisioner" (plus vaulted "step_ca_provisioner_password")
+      must be set, e.g.: ansible-playbook playbooks/issue_certificate.yml
+      -e domain=elk.hamainsurance.net --ask-vault-pass
+    quiet: true
+
+- name: Check whether a certificate already exists for this domain
+  ansible.builtin.stat:
+    path: "{{ step_ca_host_certs_dir }}/{{ domain }}.crt"
+  register: existing_cert
+
+- name: Issue certificate for {{ domain }} via step-ca (JWK provisioner, non-interactive)
+  ansible.builtin.command:
+    cmd: >-
+      docker exec -i {{ step_ca_container_name }} step ca certificate "{{ domain }}"
+      {{ step_ca_container_certs_dir }}/{{ domain }}.crt
+      {{ step_ca_container_secrets_dir }}/{{ domain }}.key
+      --provisioner {{ step_ca_provisioner }}
+      --provisioner-password-file /dev/stdin
+      --force
+    stdin: "{{ step_ca_provisioner_password }}"
+  when: not existing_cert.stat.exists or step_ca_force_reissue | bool
+  register: cert_issue
+  changed_when: cert_issue.rc == 0
+  no_log: true
+
+- name: Ensure issued certificate and key have expected ownership/permissions
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ step_ca_host_certs_dir }}/{{ domain }}.crt"
+      mode: "0644"
+    - path: "{{ step_ca_host_secrets_dir }}/{{ domain }}.key"
+      mode: "0600"

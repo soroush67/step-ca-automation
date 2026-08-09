@@ -1,0 +1,10 @@
+---
+# Copy this file to `vault.yml` (same directory) and encrypt it:
+#
+#   cp inventory/sample/group_vars/step_ca/vault.yml.example \
+#      inventory/sample/group_vars/step_ca/vault.yml
+#   ansible-vault encrypt inventory/sample/group_vars/step_ca/vault.yml
+#
+# Every file under group_vars/step_ca/ is auto-loaded for the "step_ca"
+# group, alongside main.yml. Never commit the decrypted version.
+step_ca_provisioner_password: "CHANGE_ME"

@@ -1,0 +1,12 @@
+---
+# Paths as seen *inside* the step-ca container
+step_ca_container_certs_dir: /home/step/certs
+step_ca_container_secrets_dir: /home/step/secrets
+
+# step_ca_container_name, step_ca_host_certs_dir, step_ca_host_secrets_dir
+# and step_ca_provisioner live in inventory/sample/group_vars/step_ca.yml
+# (not here) so nginx_tls_site can also read the host paths via hostvars.
+step_ca_provisioner: ~
+
+# Re-issue even if a cert already exists on disk for this domain
+step_ca_force_reissue: false

@@ -1,0 +1,5 @@
+---
+nginx_ssl_certs_dir: /etc/nginx/ssl/certs
+nginx_ssl_secrets_dir: /etc/nginx/ssl/secrets
+nginx_sites_available_dir: /etc/nginx/sites-available
+nginx_sites_enabled_dir: /etc/nginx/sites-enabled
