@@ -29,7 +29,6 @@ pipeline {
     options {
         disableConcurrentBuilds()
         timestamps()
-        ansiColor('xterm')
     }
 
     parameters {
@@ -80,22 +79,24 @@ pipeline {
                         umask 077
                         printf '%s' "$VAULT_PASS" > vault_pass.txt
                     '''
-                    try {
-                        // Values are passed via the shell environment ($DOMAIN etc, set
-                        // above from params) and double-quoted here, NOT interpolated
-                        // into this Groovy string - keeps user-supplied build
-                        // parameters from being able to inject shell commands.
-                        sh '''
-                            set -e
-                            ansible-playbook playbooks/issue_certificate.yml \
-                              -e domain="$DOMAIN" \
-                              -e backend_ip="$BACKEND_IP" \
-                              -e backend_port="$BACKEND_PORT" \
-                              -e step_ca_force_reissue="$FORCE_REISSUE" \
-                              --vault-password-file vault_pass.txt
-                        '''
-                    } finally {
-                        sh 'rm -f vault_pass.txt'
+                    script {
+                        try {
+                            // Values are passed via the shell environment ($DOMAIN etc, set
+                            // above from params) and double-quoted here, NOT interpolated
+                            // into this Groovy string - keeps user-supplied build
+                            // parameters from being able to inject shell commands.
+                            sh '''
+                                set -e
+                                ansible-playbook playbooks/issue_certificate.yml \
+                                  -e domain="$DOMAIN" \
+                                  -e backend_ip="$BACKEND_IP" \
+                                  -e backend_port="$BACKEND_PORT" \
+                                  -e step_ca_force_reissue="$FORCE_REISSUE" \
+                                  --vault-password-file vault_pass.txt
+                            '''
+                        } finally {
+                            sh 'rm -f vault_pass.txt'
+                        }
                     }
                 }
             }
