@@ -22,7 +22,9 @@ render a site config from it, enable the site, and reload nginx.
   from `step ca certificate` is step-ca's password prompt for a JWK
   provisioner. It's bypassed with `--provisioner-password-file /dev/stdin`,
   fed via Ansible's `stdin` param on the `command` task - the password
-  never touches disk or the process list on the remote host.
+  never touches disk or the process list on the remote host. The password
+  value itself comes from the `STEP_CA_PROVISIONER_PASSWORD` environment
+  variable (see Setup below), not from `-e` or an ansible-vault file.
 - **One domain per run**, passed via `-e domain=... -e backend_ip=...
   -e backend_port=...` - matches how you're issuing certs today (one
   `docker exec` / `scp` / symlink per domain).
@@ -40,13 +42,13 @@ render a site config from it, enable the site, and reload nginx.
 1. Set the real provisioner name in
    `inventory/sample/group_vars/step_ca/main.yml` (`step_ca_provisioner`,
    currently `CHANGE_ME`).
-2. Create the vaulted password file:
-   ```
-   cp inventory/sample/group_vars/step_ca/vault.yml.example \
-      inventory/sample/group_vars/step_ca/vault.yml
-   # edit step_ca_provisioner_password in it, then:
-   ansible-vault encrypt inventory/sample/group_vars/step_ca/vault.yml
-   ```
+2. Export the provisioner's actual password as `STEP_CA_PROVISIONER_PASSWORD`
+   before running ansible-playbook - it's read via an environment lookup
+   (`roles/step_ca_issue/defaults/main.yml`), never passed as `-e` (that
+   would land in argv, visible to `ps` on the host) and never written to
+   disk. There's no ansible-vault file involved; the password just needs
+   to be in the process environment when `ansible-playbook` runs. See the
+   Jenkins section below for how the pipeline supplies it.
 3. The `step_ca` play runs without `become` (relies on `devops` already
    being in the `docker` group and owning `step_ca_host_certs_dir`/
    `step_ca_host_secrets_dir`). The `nginx_gateway` play still uses
@@ -56,11 +58,10 @@ render a site config from it, enable the site, and reload nginx.
 ## Usage
 
 ```
-ansible-playbook playbooks/issue_certificate.yml \
+STEP_CA_PROVISIONER_PASSWORD=... ansible-playbook playbooks/issue_certificate.yml \
   -e domain=elk.hamainsurance.net \
   -e backend_ip=10.0.0.5 \
-  -e backend_port=5601 \
-  --ask-vault-pass
+  -e backend_port=5601
 ```
 
 ## CI/CD (Jenkins)
@@ -78,10 +79,10 @@ One-time setup, before the first run:
 1. In `infra-Domain.groovy`, set `AGENT_NODE_LABEL` to the actual label of
    the SSH agent node registered for `192.168.11.4`.
 2. Create a Jenkins **Secret text** credential holding the step-ca
-   provisioner's vault password, with ID `step-ca-vault-password` (must
-   match what's encrypted in
-   `inventory/sample/group_vars/step_ca/vault.yml`) - or change
-   `VAULT_CREDENTIALS_ID` in the pipeline to whatever ID you use.
+   provisioner's actual password, with ID `step-ca-vault-password` (or
+   change `PROVISIONER_PASSWORD_CREDENTIALS_ID` in the pipeline to
+   whatever ID you use). It's bound directly to the
+   `STEP_CA_PROVISIONER_PASSWORD` env var - no vault file involved.
 3. Confirm `ansible-playbook` is on `PATH` for the OS user the Jenkins
    agent runs as on `.11.4`. That user (via its SSH key) needs to be able
    to `ssh devops@192.168.11.4` (itself - confirmed working) and
@@ -93,13 +94,13 @@ rather than executing locally as the Jenkins agent's own OS user - the
 agent user isn't in the `docker` group and has no passwordless sudo,
 whereas `devops` already has exactly the access the manual workflow used.
 
-The pipeline never prints the vault password: it's bound via
-`withCredentials` (Jenkins auto-masks it in the log), written to a
-`vault_pass.txt` temp file in the workspace right before use, and removed
-in a `finally`/`post always` block. Build parameters are validated
-(FQDN/IPv4/port format) and passed to the shell via environment variables
-rather than Groovy string interpolation, to rule out shell injection from
-the input form.
+The pipeline never prints the provisioner password: it's bound via
+`withCredentials` (Jenkins auto-masks it in the log) straight to
+`STEP_CA_PROVISIONER_PASSWORD`, which `step_ca_issue`'s defaults read via
+an environment lookup - it's never passed as `-e` or written to a file.
+Build parameters are validated (FQDN/IPv4/port format) and passed to the
+shell via environment variables rather than Groovy string interpolation,
+to rule out shell injection from the input form.
 
 ## Not yet verified
 
@@ -116,6 +117,6 @@ end-to-end. Before trusting it against a real domain:
   `/etc/nginx/sites-available/<domain>.conf` and the reload result before
   relying on it for production domains.
 - `infra-Domain.groovy` has run against a real Jenkins instance and gotten
-  past checkout, credentials, and the step-ca connection; the `devops`
-  passwordless-sudo assumption for the `nginx_gateway` play is still
-  unverified end-to-end.
+  past checkout and the step-ca SSH connection; the actual `step ca
+  certificate` call and the `nginx_gateway` play (including the `devops`
+  passwordless-sudo assumption there) are still unverified end-to-end.

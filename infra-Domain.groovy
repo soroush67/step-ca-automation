@@ -9,19 +9,17 @@
 // One-time Jenkins setup required before this works:
 //   1. Set AGENT_NODE_LABEL below to the real label of the SSH agent node
 //      you registered for 192.168.11.4 (Manage Jenkins > Nodes).
-//   2. Create a "Secret text" credential holding the step-ca provisioner's
-//      vault password, with ID VAULT_CREDENTIALS_ID below (must match
-//      step_ca_provisioner_password as encrypted in
-//      inventory/sample/group_vars/step_ca/vault.yml).
+//   2. Create a "Secret text" credential holding the step-ca JWK
+//      provisioner's actual password, with ID
+//      PROVISIONER_PASSWORD_CREDENTIALS_ID below. It's bound straight to
+//      the STEP_CA_PROVISIONER_PASSWORD env var that
+//      roles/step_ca_issue reads - there's no separate vault file/password.
 //   3. Confirm `ansible-playbook` is installed and on PATH for whichever
 //      OS user the Jenkins agent runs as on 192.168.11.4, and that that
-//      same user can SSH to itself (the "step_ca" play targets
-//      192.168.11.4, and the pipeline now runs ON 192.168.11.4 - if
-//      self-SSH isn't already set up, either enable it or add
-//      `ansible_connection: local` for that host in the inventory).
+//      user can SSH as devops to 192.168.11.4 (itself) and 192.168.11.2.
 
 def AGENT_NODE_LABEL = 'CHANGE_ME_STEP_CA_AGENT_LABEL'
-def VAULT_CREDENTIALS_ID = 'step-ca-vault-password'
+def PROVISIONER_PASSWORD_CREDENTIALS_ID = 'step-ca-vault-password'
 
 pipeline {
     agent { label AGENT_NODE_LABEL }
@@ -73,39 +71,23 @@ pipeline {
                 FORCE_REISSUE = "${params.FORCE_REISSUE}"
             }
             steps {
-                withCredentials([string(credentialsId: VAULT_CREDENTIALS_ID, variable: 'VAULT_PASS')]) {
+                // Values are passed via the shell environment (set above from
+                // params, plus STEP_CA_PROVISIONER_PASSWORD bound below) and
+                // double-quoted/read-by-ansible-directly, NOT interpolated into
+                // this Groovy string - keeps user-supplied build parameters from
+                // being able to inject shell commands, and keeps the password out
+                // of argv (ansible reads it straight from the environment).
+                withCredentials([string(credentialsId: PROVISIONER_PASSWORD_CREDENTIALS_ID, variable: 'STEP_CA_PROVISIONER_PASSWORD')]) {
                     sh '''
                         set -e
-                        umask 077
-                        printf '%s' "$VAULT_PASS" > vault_pass.txt
+                        ansible-playbook playbooks/issue_certificate.yml \
+                          -e domain="$DOMAIN" \
+                          -e backend_ip="$BACKEND_IP" \
+                          -e backend_port="$BACKEND_PORT" \
+                          -e step_ca_force_reissue="$FORCE_REISSUE"
                     '''
-                    script {
-                        try {
-                            // Values are passed via the shell environment ($DOMAIN etc, set
-                            // above from params) and double-quoted here, NOT interpolated
-                            // into this Groovy string - keeps user-supplied build
-                            // parameters from being able to inject shell commands.
-                            sh '''
-                                set -e
-                                ansible-playbook playbooks/issue_certificate.yml \
-                                  -e domain="$DOMAIN" \
-                                  -e backend_ip="$BACKEND_IP" \
-                                  -e backend_port="$BACKEND_PORT" \
-                                  -e step_ca_force_reissue="$FORCE_REISSUE" \
-                                  --vault-password-file vault_pass.txt
-                            '''
-                        } finally {
-                            sh 'rm -f vault_pass.txt'
-                        }
-                    }
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            sh 'rm -f vault_pass.txt || true'
         }
     }
 }

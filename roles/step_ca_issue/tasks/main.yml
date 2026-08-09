@@ -5,11 +5,13 @@
       - domain is defined
       - domain | length > 0
       - step_ca_provisioner is not none
-      - step_ca_provisioner_password is defined
+      - step_ca_provisioner_password | length > 0
     fail_msg: >-
-      "domain" and "step_ca_provisioner" (plus vaulted "step_ca_provisioner_password")
-      must be set, e.g.: ansible-playbook playbooks/issue_certificate.yml
-      -e domain=elk.hamainsurance.net --ask-vault-pass
+      "domain" and "step_ca_provisioner" must be set, and the
+      STEP_CA_PROVISIONER_PASSWORD environment variable must be exported
+      before running ansible-playbook, e.g.:
+      STEP_CA_PROVISIONER_PASSWORD=... ansible-playbook
+      playbooks/issue_certificate.yml -e domain=elk.hamainsurance.net
     quiet: true
 
 - name: Check whether a certificate already exists for this domain
